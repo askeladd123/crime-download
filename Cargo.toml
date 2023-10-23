@@ -3,6 +3,10 @@ name = "game-jam-2"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies.rand]
+version = "0.8.5"
+features = ["std"]
+
 [dependencies.bevy]
 version = "0.11.3"
 features = ["jpeg"]

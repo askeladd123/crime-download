@@ -8,6 +8,7 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Msaa::Sample4)
+        .add_state::<State>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "SVG Plugin".to_string(),
@@ -24,9 +25,19 @@ fn main() {
                 keyboard_input,
                 apply_velocity,
                 pull_inside_bounds,
-            ),
+                check_game_over,
+            )
+                .run_if(in_state(State::InGame)),
         )
+        .add_systems(OnEnter(State::GameOver), game_over)
         .run();
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+enum State {
+    #[default]
+    InGame,
+    GameOver,
 }
 
 #[derive(Component)]
@@ -66,6 +77,48 @@ impl Default for Enemy {
 
 #[derive(Component, Default, Copy, Clone, Debug)]
 struct Velocity(Vec2);
+
+fn game_over(mut cmd: Commands) {
+    cmd.spawn(Text2dBundle {
+        text: Text::from_section(
+            "game over",
+            TextStyle {
+                font_size: 100.,
+                ..default()
+            },
+        ),
+        transform: Transform {
+            translation: Vec3 {
+                z: 100.,
+                ..default()
+            },
+            ..default()
+        },
+        ..default()
+    });
+}
+
+fn check_game_over(
+    mut next_state: ResMut<NextState<State>>,
+    query_player: Query<&Transform, With<Player>>,
+    query_enemies: Query<&Transform, With<Enemy>>,
+) {
+    const BBOX_SIZE: f32 = 50.;
+    let player = query_player.single();
+    for enemy in query_enemies.iter() {
+        if bevy::sprite::collide_aabb::collide(
+            player.translation,
+            Vec2::new(BBOX_SIZE, BBOX_SIZE),
+            enemy.translation,
+            Vec2::new(BBOX_SIZE, BBOX_SIZE),
+        )
+        .is_some()
+        {
+            next_state.set(State::GameOver);
+            return;
+        }
+    }
+}
 
 fn setup(
     mut cmd: Commands,
