@@ -5,6 +5,7 @@ const PI: f32 = std::f32::consts::PI;
 
 fn main() {
     App::new()
+        .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Msaa::Sample4)
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -15,7 +16,7 @@ fn main() {
         }))
         .add_plugins(bevy_svg::prelude::SvgPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, (keyboard_input, apply_velocity))
+        .add_systems(Update, (keyboard_input, apply_velocity, pull_inside_bounds))
         .run();
 }
 
@@ -45,30 +46,48 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    query_window: Query<&Window>,
 ) {
+    let window = query_window.single();
     cmd.spawn(Camera2dBundle::default());
     // cmd.spawn(Text2dBundle {
     //     text: Text::from_section("translation", TextStyle::default()),
     //     ..default()
     // });
 
-    // for _ in 0..2 {
-    //     cmd.spawn((Enemy, TransformBundle::default(), Velocity::default()))
-    //         .with_children(|cmd| {
-    //             cmd.spawn(Svg2dBundle {
-    //                 svg: asset_server.load("police.svg"),
-    //                 transform: Transform {
-    //                     scale: Vec3 {
-    //                         x: 0.1,
-    //                         y: 0.1,
-    //                         ..default()
-    //                     },
-    //                     ..default()
-    //                 },
-    //                 ..default()
-    //             });
-    //         });
-    // }
+    for _ in 0..2 {
+        cmd.spawn((
+            Enemy,
+            TransformBundle {
+                local: Transform {
+                    translation: Vec3 {
+                        x: window.width() / 2.,
+                        y: window.height() / 2.,
+                        ..default()
+                    },
+                    ..default()
+                },
+                ..default()
+            },
+            Velocity::default(),
+            ComputedVisibility::default(),
+            Visibility::Visible,
+        ))
+        .with_children(|cmd| {
+            cmd.spawn(Svg2dBundle {
+                svg: asset_server.load("police.svg"),
+                transform: Transform {
+                    // scale: Vec3 {
+                    //     x: 0.1,
+                    //     y: 0.1,
+                    //     ..default()
+                    // },
+                    ..default()
+                },
+                ..default()
+            });
+        });
+    }
 
     cmd.spawn(SpriteBundle {
         texture: asset_server.load("floor.jpg"),
@@ -127,10 +146,52 @@ fn setup(
 //     for mut trans in query.iter_mut() {}
 // }
 
-fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
-    for (mut trans, vel) in query.iter_mut() {
+fn apply_velocity(mut query: Query<(&mut Transform, &mut Velocity)>) {
+    const MIN_VEL: f32 = 0.1;
+    const DRAG_C: f32 = 0.5;
+
+    for (mut trans, mut vel) in query.iter_mut() {
         trans.translation.x += vel.0.x;
         trans.translation.y += vel.0.y;
+        vel.0 = if MIN_VEL < vel.0.length() {
+            vel.0 * DRAG_C
+        } else {
+            Vec2::ZERO
+        }
+    }
+}
+
+fn pull_inside_bounds(mut query: Query<(&Transform, &mut Velocity)>, query_window: Query<&Window>) {
+    const PULL_VEL: f32 = 6.;
+    let window = query_window.single();
+
+    let (left, right, up, down) = (
+        -window.width() / 2.,
+        window.width() / 2.,
+        -window.height() / 2.,
+        window.height() / 2.,
+    );
+
+    for (
+        Transform {
+            translation: Vec3 { x, y, .. },
+            ..
+        },
+        mut vel,
+    ) in query.iter_mut()
+    {
+        if right < *x {
+            vel.0.x -= PULL_VEL;
+        }
+        if *x < left {
+            vel.0.x += PULL_VEL;
+        }
+        if down < *y {
+            vel.0.y -= PULL_VEL;
+        }
+        if *y < up {
+            vel.0.y += PULL_VEL;
+        }
     }
 }
 
@@ -167,7 +228,7 @@ fn keyboard_input(
         keyboard_input.pressed(KeyCode::Right) || keyboard_input.pressed(KeyCode::D),
     );
 
-    vel.0 = match (up, down, left, right) {
+    vel.0 += match (up, down, left, right) {
         (true, false, false, false) => Vec2::from_angle(3. * PI / 2.),
         (false, true, false, false) => Vec2::from_angle(PI / 2.),
         (false, false, true, false) => Vec2::from_angle(PI),
