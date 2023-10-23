@@ -1,0 +1,13 @@
+[package]
+name = "game-jam-2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.bevy]
+version = "0.11.3"
+features = ["jpeg"]
+
+[dependencies.bevy_svg]
+version = "0.11.0"
+default-features = false
+features = ["2d"]
