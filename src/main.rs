@@ -1,5 +1,6 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_svg::prelude::*;
+use rand::Rng;
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -16,7 +17,15 @@ fn main() {
         }))
         .add_plugins(bevy_svg::prelude::SvgPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, (keyboard_input, apply_velocity, pull_inside_bounds))
+        .add_systems(
+            Update,
+            (
+                update_enemies,
+                keyboard_input,
+                apply_velocity,
+                pull_inside_bounds,
+            ),
+        )
         .run();
 }
 
@@ -36,7 +45,24 @@ impl Default for Player {
 }
 
 #[derive(Component)]
-struct Enemy;
+struct Enemy {
+    // change to change_goal
+    change_goal: Timer,
+    angle: f32,
+    goal: Vec2,
+}
+
+impl Default for Enemy {
+    fn default() -> Self {
+        let mut rng = rand::thread_rng();
+        Self {
+            change_goal: Timer::from_seconds(rng.gen_range(1.0..10.0), TimerMode::Repeating),
+
+            angle: Default::default(),
+            goal: Default::default(),
+        }
+    }
+}
 
 #[derive(Component, Default, Copy, Clone, Debug)]
 struct Velocity(Vec2);
@@ -48,6 +74,9 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
     query_window: Query<&Window>,
 ) {
+    const STARTING_ENEMIES: u32 = 5;
+
+    let mut rng = rand::thread_rng();
     let window = query_window.single();
     cmd.spawn(Camera2dBundle::default());
     // cmd.spawn(Text2dBundle {
@@ -55,14 +84,20 @@ fn setup(
     //     ..default()
     // });
 
-    for _ in 0..2 {
+    for _ in 0..STARTING_ENEMIES {
         cmd.spawn((
-            Enemy,
+            Enemy {
+                goal: Vec2 {
+                    x: rng.gen_range((-window.width() / 2.0)..(window.width() / 2.0)),
+                    y: rng.gen_range((-window.height() / 2.0)..(window.height() / 2.0)),
+                },
+                ..default()
+            },
             TransformBundle {
                 local: Transform {
                     translation: Vec3 {
-                        x: window.width() / 2.,
-                        y: window.height() / 2.,
+                        x: -window.width() / 2.0,
+                        y: -window.height() / 2.0,
                         ..default()
                     },
                     ..default()
@@ -74,14 +109,26 @@ fn setup(
             Visibility::Visible,
         ))
         .with_children(|cmd| {
+            // cmd.spawn(MaterialMesh2dBundle {
+            //     mesh: meshes
+            //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+            //         .into(),
+            //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+            //     ..default()
+            // });
             cmd.spawn(Svg2dBundle {
                 svg: asset_server.load("police.svg"),
                 transform: Transform {
-                    // scale: Vec3 {
-                    //     x: 0.1,
-                    //     y: 0.1,
-                    //     ..default()
-                    // },
+                    scale: Vec3 {
+                        x: 1.5,
+                        y: 1.5,
+                        ..default()
+                    },
+                    translation: Vec3 {
+                        x: -25.,
+                        y: 25.,
+                        ..default()
+                    },
                     ..default()
                 },
                 ..default()
@@ -142,9 +189,49 @@ fn setup(
     });
 }
 
-// fn update_enemies(mut query: Query<&mut Transform, With<Enemy>>) {
-//     for mut trans in query.iter_mut() {}
-// }
+fn update_enemies(
+    mut query: Query<(&Transform, &mut Velocity, &mut Enemy)>,
+    time: Res<Time>,
+    window: Query<&Window>,
+) {
+    const SPEED: f32 = 1.;
+    const GOAL_MARGIN: f32 = 1.;
+
+    let window = window.single();
+    let (left, right, up, down) = (
+        -window.width() / 2.,
+        window.width() / 2.,
+        -window.height() / 2.,
+        window.height() / 2.,
+    );
+    for (
+        Transform {
+            translation: trans, ..
+        },
+        mut vel,
+        mut enemy,
+    ) in query.iter_mut()
+    {
+        if enemy.change_goal.tick(time.delta()).just_finished() {
+            let mut rng = rand::thread_rng();
+            enemy.goal = Vec2 {
+                x: rng.gen_range(left..right),
+                y: rng.gen_range(up..down),
+            };
+        }
+        let pos = Vec2 {
+            x: trans.x,
+            y: trans.y,
+        };
+
+        if GOAL_MARGIN < (enemy.goal - pos).length() {
+            // vel.0 += Vec2::ONE;
+
+            let dir = enemy.goal - pos;
+            vel.0 += dir.normalize() * SPEED;
+        }
+    }
+}
 
 fn apply_velocity(mut query: Query<(&mut Transform, &mut Velocity)>) {
     const MIN_VEL: f32 = 0.1;
