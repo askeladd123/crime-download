@@ -9,9 +9,10 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Msaa::Sample4)
         .add_state::<State>()
+        .add_event::<AddComputerAndUsb>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "SVG Plugin".to_string(),
+                title: "game jam 2".to_string(),
                 ..Default::default()
             }),
             ..Default::default()
@@ -26,12 +27,28 @@ fn main() {
                 apply_velocity,
                 pull_inside_bounds,
                 check_game_over,
+                add_computer_and_usb,
             )
                 .run_if(in_state(State::InGame)),
         )
         .add_systems(OnEnter(State::GameOver), game_over)
         .run();
 }
+
+#[derive(Resource)]
+struct AssetPool {
+    computer: Handle<Image>,
+    usb: Handle<Image>,
+}
+
+#[derive(Event)]
+struct AddComputerAndUsb;
+
+#[derive(Component)]
+struct Computer;
+
+#[derive(Component)]
+struct Usb;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum State {
@@ -126,24 +143,49 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     query_window: Query<&Window>,
+    mut writer: EventWriter<AddComputerAndUsb>,
 ) {
+    writer.send(AddComputerAndUsb);
+    writer.send(AddComputerAndUsb);
+    writer.send(AddComputerAndUsb);
+
     const STARTING_ENEMIES: u32 = 5;
 
     let mut rng = rand::thread_rng();
     let window = query_window.single();
+
     cmd.spawn(Camera2dBundle::default());
+
+    // cmd.spawn(Svg2dBundle {
+    //     svg: asset_server.load("computer-1.svg"),
+    //     transform: Transform {
+    //         scale: Vec3 {
+    //             x: 1.5,
+    //             y: 1.5,
+    //             ..default()
+    //         },
+    //         translation: Vec3 {
+    //             x: 0.,
+    //             y: 0.,
+    //             ..default()
+    //         },
+    //         ..default()
+    //     },
+    //     origin: Origin::Center,
+    //     ..default()
+    // });
+
+    // images stolen counter in top left
     // cmd.spawn(Text2dBundle {
     //     text: Text::from_section("translation", TextStyle::default()),
     //     ..default()
     // });
 
-    for _ in 0..STARTING_ENEMIES {
+    let police_handle = asset_server.load("police.svg");
+    for i in 0..STARTING_ENEMIES {
         cmd.spawn((
             Enemy {
-                goal: Vec2 {
-                    x: rng.gen_range((-window.width() / 2.0)..(window.width() / 2.0)),
-                    y: rng.gen_range((-window.height() / 2.0)..(window.height() / 2.0)),
-                },
+                goal: random_window_position(&window, &mut rng),
                 ..default()
             },
             TransformBundle {
@@ -151,15 +193,14 @@ fn setup(
                     translation: Vec3 {
                         x: -window.width() / 2.0,
                         y: -window.height() / 2.0,
-                        ..default()
+                        z: i as f32,
                     },
                     ..default()
                 },
                 ..default()
             },
             Velocity::default(),
-            ComputedVisibility::default(),
-            Visibility::Visible,
+            VisibilityBundle::default(),
         ))
         .with_children(|cmd| {
             // cmd.spawn(MaterialMesh2dBundle {
@@ -170,7 +211,7 @@ fn setup(
             //     ..default()
             // });
             cmd.spawn(Svg2dBundle {
-                svg: asset_server.load("police.svg"),
+                svg: police_handle.clone(),
                 transform: Transform {
                     scale: Vec3 {
                         x: 1.5,
@@ -188,6 +229,10 @@ fn setup(
             });
         });
     }
+    cmd.insert_resource(AssetPool {
+        computer: asset_server.load("computer.png"),
+        usb: asset_server.load("usb.png"),
+    });
 
     cmd.spawn(SpriteBundle {
         texture: asset_server.load("floor.jpg"),
@@ -223,6 +268,12 @@ fn setup(
         cmd.spawn(Svg2dBundle {
             svg: asset_server.load("thief.svg"),
             transform: Transform {
+                // translation: Vec3 {
+                //     x: -25.,
+                //     y: 25.,
+                //     z: 10.,
+                //     ..Default::default()
+                // },
                 translation: Vec3 {
                     x: -25.,
                     y: 25.,
@@ -236,7 +287,8 @@ fn setup(
                 },
                 ..default()
             },
-            origin: Origin::TopLeft,
+            origin: Origin::Center,
+            // origin: Origin::TopLeft,
             ..default()
         });
     });
@@ -340,7 +392,7 @@ fn keyboard_input(
     mut query: Query<(&mut Velocity, &mut Player)>,
     time: Res<Time>,
 ) {
-    const SPEED: f32 = 5.;
+    const SPEED: f32 = 4.;
     const DASH_C: f32 = 4.;
 
     let (mut vel, mut player) = query.single_mut();
@@ -379,4 +431,118 @@ fn keyboard_input(
         (true, false, false, true) => Vec2::from_angle(7. * PI / 4.),
         _ => Vec2::ZERO,
     } * speed;
+}
+
+fn random_window_position(window: &Window, rng: &mut rand::rngs::ThreadRng) -> Vec2 {
+    let (left, right, up, down) = (
+        -window.width() / 2.,
+        window.width() / 2.,
+        -window.height() / 2.,
+        window.height() / 2.,
+    );
+
+    Vec2 {
+        x: rng.gen_range(left..right),
+        y: rng.gen_range(up..down),
+    }
+}
+
+fn add_computer_and_usb(
+    mut cmd: Commands,
+    mut reader: EventReader<AddComputerAndUsb>,
+    query_window: Query<&Window>,
+    asset_pool: Res<AssetPool>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for _ in reader.iter() {
+        let mut rng = rand::thread_rng();
+        let window = query_window.single();
+        cmd.spawn((
+            Computer,
+            SpriteBundle {
+                texture: asset_pool.computer.clone(),
+                transform: Transform {
+                    translation: random_window_position(&window, &mut rng).extend(0.),
+                    scale: Vec3 {
+                        x: 0.2,
+                        y: 0.2,
+                        ..default()
+                    },
+                    ..default()
+                },
+                ..default()
+            },
+        ))
+        .with_children(|cmd| {
+            cmd.spawn(MaterialMesh2dBundle {
+                mesh: meshes
+                    .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+                    .into(),
+                material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+                ..default()
+            });
+            // cmd.spawn(Svg2dBundle {
+            //     svg: asset_pool.computer.clone(),
+            //     transform: Transform {
+            //         scale: Vec3 {
+            //             x: 0.5,
+            //             y: 0.5,
+            //             ..default()
+            //         },
+            //         translation: Vec3 {
+            //             // x: -25.,
+            //             // y: 25.,
+            //             ..default()
+            //         },
+            //         ..default()
+            //     },
+            //     origin: Origin::Center,
+            //     ..default()
+            // });
+        });
+
+        cmd.spawn((
+            Usb,
+            SpriteBundle {
+                texture: asset_pool.usb.clone(),
+                transform: Transform {
+                    translation: random_window_position(&window, &mut rng).extend(0.),
+                    scale: Vec3 {
+                        x: 0.15,
+                        y: 0.15,
+                        ..default()
+                    },
+                    ..default()
+                },
+                ..default()
+            },
+        ))
+        .with_children(|cmd| {
+            cmd.spawn(MaterialMesh2dBundle {
+                mesh: meshes
+                    .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+                    .into(),
+                material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+                ..default()
+            });
+            // cmd.spawn(Svg2dBundle {
+            //     svg: asset_pool.usb.clone(),
+            //     transform: Transform {
+            //         scale: Vec3 {
+            //             x: 1.5,
+            //             y: 1.5,
+            //             ..default()
+            //         },
+            //         translation: Vec3 {
+            //             x: -25.,
+            //             y: 25.,
+            //             ..default()
+            //         },
+            //         ..default()
+            //     },
+            //     ..default()
+            // });
+        });
+    }
 }
