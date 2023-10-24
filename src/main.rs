@@ -1,8 +1,12 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy::{
+    log::LogPlugin, pbr::extract_camera_previous_view_projection, prelude::*,
+    sprite::MaterialMesh2dBundle,
+};
 use bevy_svg::prelude::*;
 use rand::Rng;
 
 const PI: f32 = std::f32::consts::PI;
+const BBOX_SIZE: Vec2 = Vec2 { x: 50., y: 50. };
 
 fn main() {
     App::new()
@@ -10,13 +14,20 @@ fn main() {
         .insert_resource(Msaa::Sample4)
         .add_state::<State>()
         .add_event::<AddComputerAndUsb>()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "game jam 2".to_string(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "game jam 2".to_string(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .set(LogPlugin {
+                    filter: "warn,stealy=trace,wgpu_hal::vulkan::instance=off".into(),
+                    ..default()
+                }),
+        )
         .add_plugins(bevy_svg::prelude::SvgPlugin)
         .add_systems(Startup, setup)
         .add_systems(
@@ -28,11 +39,56 @@ fn main() {
                 pull_inside_bounds,
                 check_game_over,
                 add_computer_and_usb,
+                pick_up_usb,
+                insert_usb,
+                update_progress,
             )
                 .run_if(in_state(State::InGame)),
         )
         .add_systems(OnEnter(State::GameOver), game_over)
         .run();
+}
+
+// Resources, Components and Events
+
+#[derive(Component)]
+struct ProgressBar {
+    timer: Timer,
+    progress: u32,
+}
+
+impl Default for ProgressBar {
+    fn default() -> Self {
+        Self {
+            timer: Timer::from_seconds(0.25, TimerMode::Repeating),
+            progress: 0,
+        }
+    }
+}
+
+#[derive(Bundle)]
+struct ProgressBarBundle {
+    text: Text2dBundle,
+    tag: ProgressBar,
+}
+
+impl Default for ProgressBarBundle {
+    fn default() -> Self {
+        Self {
+            text: Text2dBundle {
+                text: Text::from_section(
+                    "downloading...",
+                    TextStyle {
+                        font_size: 30.,
+                        ..default()
+                    },
+                ),
+                transform: Transform::default(),
+                ..default()
+            },
+            tag: ProgressBar::default(),
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -120,14 +176,13 @@ fn check_game_over(
     query_player: Query<&Transform, With<Player>>,
     query_enemies: Query<&Transform, With<Enemy>>,
 ) {
-    const BBOX_SIZE: f32 = 50.;
     let player = query_player.single();
     for enemy in query_enemies.iter() {
         if bevy::sprite::collide_aabb::collide(
             player.translation,
-            Vec2::new(BBOX_SIZE, BBOX_SIZE),
+            BBOX_SIZE,
             enemy.translation,
-            Vec2::new(BBOX_SIZE, BBOX_SIZE),
+            BBOX_SIZE,
         )
         .is_some()
         {
@@ -147,9 +202,9 @@ fn setup(
 ) {
     writer.send(AddComputerAndUsb);
     writer.send(AddComputerAndUsb);
-    writer.send(AddComputerAndUsb);
+    // writer.send(AddComputerAndUsb);
 
-    const STARTING_ENEMIES: u32 = 5;
+    const STARTING_ENEMIES: u32 = 2;
 
     let mut rng = rand::thread_rng();
     let window = query_window.single();
@@ -544,5 +599,88 @@ fn add_computer_and_usb(
             //     ..default()
             // });
         });
+    }
+}
+
+fn pick_up_usb(
+    mut q_usb: Query<(&mut Transform, Entity), (With<Usb>, Without<Player>)>,
+    q_player: Query<(&Transform, Entity), (With<Player>, Without<Usb>)>,
+    mut cmd: Commands,
+) {
+    let (
+        Transform {
+            translation: player_trans,
+            ..
+        },
+        player,
+    ) = q_player.single();
+
+    for (mut usb_transform, usb) in q_usb.iter_mut() {
+        if bevy::sprite::collide_aabb::collide(
+            *player_trans,
+            BBOX_SIZE,
+            usb_transform.translation,
+            BBOX_SIZE,
+        )
+        .is_some()
+        {
+            let mut player = cmd.get_entity(player).unwrap();
+            usb_transform.translation.x = 30.;
+            usb_transform.translation.y = 30.;
+            player.push_children(&[usb]);
+        }
+    }
+}
+
+fn insert_usb(
+    q_usb: Query<(&GlobalTransform, Entity), (With<Usb>, Without<Computer>)>,
+    q_computer: Query<(&Transform, Entity), (With<Computer>, Without<Usb>)>,
+    mut cmd: Commands,
+) {
+    for (usb_transform, usb_entity) in q_usb.iter() {
+        // info!("tick usb");
+        for (computer_transform, computer_entity) in q_computer.iter() {
+            // dbg!(computer_transform.translation, usb_transform.translation());
+            // info!("tick computer");
+
+            if bevy::sprite::collide_aabb::collide(
+                usb_transform.translation(),
+                BBOX_SIZE,
+                computer_transform.translation,
+                BBOX_SIZE,
+            )
+            .is_some()
+            {
+                cmd.entity(usb_entity).despawn_recursive();
+
+                cmd.spawn(ProgressBarBundle {
+                    text: Text2dBundle {
+                        text: Text::from_section(
+                            "downloading...",
+                            TextStyle {
+                                font_size: 30.,
+                                ..default()
+                            },
+                        ),
+                        transform: Transform::from_translation(
+                            computer_transform.translation + Vec3::new(0., 50., 10.),
+                        ),
+                        ..default()
+                    },
+                    ..default()
+                });
+                return;
+            }
+        }
+    }
+}
+
+fn update_progress(mut q: Query<Option<(&mut ProgressBar, &mut Text)>>, time: Res<Time>) {
+    for (mut p, mut text) in q.iter_mut().filter_map(|v| v) {
+        if p.timer.tick(time.delta()).just_finished() {
+            p.progress += 1;
+        }
+
+        text.sections.first_mut().unwrap().value = format!("download {}", p.progress);
     }
 }
