@@ -3,8 +3,13 @@ use bevy::{
     sprite::MaterialMesh2dBundle,
 };
 use bevy_svg::prelude::*;
+use bevy_text_popup::{
+    TextPopupButton, TextPopupEvent, TextPopupLocation, TextPopupPlugin, TextPopupTimeout,
+};
 use rand::Rng;
 
+mod popups;
+use popups::*;
 const PI: f32 = std::f32::consts::PI;
 const BBOX_SIZE: Vec2 = Vec2 { x: 50., y: 50. };
 
@@ -14,7 +19,8 @@ fn main() {
         .insert_resource(Msaa::Sample4)
         .add_state::<State>()
         .add_event::<AddComputerAndUsb>()
-        .add_plugins(
+        .add_event::<PopupCommand>()
+        .add_plugins((
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
@@ -27,7 +33,8 @@ fn main() {
                     filter: "warn,stealy=trace,wgpu_hal::vulkan::instance=off".into(),
                     ..default()
                 }),
-        )
+            TextPopupPlugin,
+        ))
         .add_plugins(bevy_svg::prelude::SvgPlugin)
         .add_systems(Startup, setup)
         .add_systems(
@@ -41,7 +48,8 @@ fn main() {
                 add_computer_and_usb,
                 pick_up_usb,
                 insert_usb,
-                update_progress,
+                update_progress_and_spawn_popups,
+                handle_popup_events,
             )
                 .run_if(in_state(State::InGame)),
         )
@@ -54,6 +62,7 @@ fn main() {
 #[derive(Component)]
 struct ProgressBar {
     timer: Timer,
+    timer_popups: Timer,
     progress: u32,
 }
 
@@ -61,6 +70,7 @@ impl Default for ProgressBar {
     fn default() -> Self {
         Self {
             timer: Timer::from_seconds(0.25, TimerMode::Repeating),
+            timer_popups: Timer::from_seconds(3., TimerMode::Repeating),
             progress: 0,
         }
     }
@@ -675,12 +685,32 @@ fn insert_usb(
     }
 }
 
-fn update_progress(mut q: Query<Option<(&mut ProgressBar, &mut Text)>>, time: Res<Time>) {
+fn update_progress_and_spawn_popups(
+    mut q: Query<Option<(&mut ProgressBar, &mut Text)>>,
+    time: Res<Time>,
+    mut writer: EventWriter<TextPopupEvent>,
+) {
     for (mut p, mut text) in q.iter_mut().filter_map(|v| v) {
         if p.timer.tick(time.delta()).just_finished() {
             p.progress += 1;
         }
 
+        if p.timer_popups.tick(time.delta()).just_finished() {
+            if rand::random() {
+                insert_random_popup(&mut writer);
+            }
+        }
+
         text.sections.first_mut().unwrap().value = format!("download {}", p.progress);
+    }
+}
+
+fn handle_popup_events(mut reader: EventReader<PopupCommand>) {
+    for event in reader.iter() {
+        match event {
+            PopupCommand::AddCop => info!("got add cop command"),
+            PopupCommand::CopsTargetPlayer => info!("got cops target player command"),
+            PopupCommand::IncreaseCopSpeed => info!("got increase cop speed command"),
+        }
     }
 }

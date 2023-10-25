@@ -3,6 +3,9 @@ name = "stealy"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+bevy_text_popup = "0.1.0"
+
 [dependencies.rand]
 version = "0.8.5"
 features = ["std"]
