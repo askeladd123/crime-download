@@ -20,6 +20,7 @@ fn main() {
         .add_state::<State>()
         .add_event::<AddComputerAndUsb>()
         .add_event::<PopupCommand>()
+        .add_event::<AddEnemy>()
         .add_plugins((
             DefaultPlugins
                 .set(WindowPlugin {
@@ -46,9 +47,11 @@ fn main() {
                 pull_inside_bounds,
                 check_game_over,
                 add_computer_and_usb,
+                add_enemy,
                 pick_up_usb,
                 insert_usb,
                 update_progress_and_spawn_popups,
+                update_score,
                 handle_popup_events,
             )
                 .run_if(in_state(State::InGame)),
@@ -58,6 +61,21 @@ fn main() {
 }
 
 // Resources, Components and Events
+
+#[derive(Resource)]
+struct Common {
+    enemy_speed: f32,
+    score: u32,
+}
+
+impl Default for Common {
+    fn default() -> Self {
+        Self {
+            enemy_speed: 1.,
+            score: 0,
+        }
+    }
+}
 
 #[derive(Component)]
 struct ProgressBar {
@@ -105,10 +123,14 @@ impl Default for ProgressBarBundle {
 struct AssetPool {
     computer: Handle<Image>,
     usb: Handle<Image>,
+    police: Handle<Svg>,
 }
 
 #[derive(Event)]
 struct AddComputerAndUsb;
+
+#[derive(Event)]
+struct AddEnemy;
 
 #[derive(Component)]
 struct Computer;
@@ -202,6 +224,9 @@ fn check_game_over(
     }
 }
 
+#[derive(Component)]
+struct Score;
+
 fn setup(
     mut cmd: Commands,
     asset_server: Res<AssetServer>,
@@ -209,6 +234,7 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
     query_window: Query<&Window>,
     mut writer: EventWriter<AddComputerAndUsb>,
+    mut w_enemy: EventWriter<AddEnemy>,
 ) {
     writer.send(AddComputerAndUsb);
     writer.send(AddComputerAndUsb);
@@ -246,58 +272,62 @@ fn setup(
     //     ..default()
     // });
 
-    let police_handle = asset_server.load("police.svg");
+    // let police_handle = asset_server.load("police.svg");
     for i in 0..STARTING_ENEMIES {
-        cmd.spawn((
-            Enemy {
-                goal: random_window_position(&window, &mut rng),
-                ..default()
-            },
-            TransformBundle {
-                local: Transform {
-                    translation: Vec3 {
-                        x: -window.width() / 2.0,
-                        y: -window.height() / 2.0,
-                        z: i as f32,
-                    },
-                    ..default()
-                },
-                ..default()
-            },
-            Velocity::default(),
-            VisibilityBundle::default(),
-        ))
-        .with_children(|cmd| {
-            // cmd.spawn(MaterialMesh2dBundle {
-            //     mesh: meshes
-            //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
-            //         .into(),
-            //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
-            //     ..default()
-            // });
-            cmd.spawn(Svg2dBundle {
-                svg: police_handle.clone(),
-                transform: Transform {
-                    scale: Vec3 {
-                        x: 1.5,
-                        y: 1.5,
-                        ..default()
-                    },
-                    translation: Vec3 {
-                        x: -25.,
-                        y: 25.,
-                        ..default()
-                    },
-                    ..default()
-                },
-                ..default()
-            });
-        });
+        w_enemy.send(AddEnemy);
+        // cmd.spawn((
+        //     Enemy {
+        //         goal: random_window_position(&window, &mut rng),
+        //         ..default()
+        //     },
+        //     TransformBundle {
+        //         local: Transform {
+        //             translation: Vec3 {
+        //                 x: -window.width() / 2.0,
+        //                 y: -window.height() / 2.0,
+        //                 z: i as f32,
+        //             },
+        //             ..default()
+        //         },
+        //         ..default()
+        //     },
+        //     Velocity::default(),
+        //     VisibilityBundle::default(),
+        // ))
+        // .with_children(|cmd| {
+        //     // cmd.spawn(MaterialMesh2dBundle {
+        //     //     mesh: meshes
+        //     //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+        //     //         .into(),
+        //     //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+        //     //     ..default()
+        //     // });
+        //     cmd.spawn(Svg2dBundle {
+        //         svg: police_handle.clone(),
+        //         transform: Transform {
+        //             scale: Vec3 {
+        //                 x: 1.5,
+        //                 y: 1.5,
+        //                 ..default()
+        //             },
+        //             translation: Vec3 {
+        //                 x: -25.,
+        //                 y: 25.,
+        //                 ..default()
+        //             },
+        //             ..default()
+        //         },
+        //         ..default()
+        //     });
+        // });
     }
     cmd.insert_resource(AssetPool {
         computer: asset_server.load("computer.png"),
         usb: asset_server.load("usb.png"),
+        police: asset_server.load("police.svg"),
     });
+
+    cmd.insert_resource(Common::default());
 
     cmd.spawn(SpriteBundle {
         texture: asset_server.load("floor.jpg"),
@@ -315,6 +345,29 @@ fn setup(
         },
         ..default()
     });
+
+    cmd.spawn((
+        Score,
+        Text2dBundle {
+            text: Text::from_section(
+                "no score",
+                TextStyle {
+                    font_size: 60.,
+                    ..default()
+                },
+            ),
+            transform: Transform {
+                translation: Vec3 {
+                    y: 300.,
+                    z: 100.,
+                    ..default()
+                },
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
     cmd.spawn((
         Player::default(),
         TransformBundle::default(),
@@ -363,9 +416,10 @@ fn update_enemies(
     mut query: Query<(&Transform, &mut Velocity, &mut Enemy)>,
     time: Res<Time>,
     window: Query<&Window>,
+    common: ResMut<Common>,
 ) {
-    const SPEED: f32 = 1.;
-    const GOAL_MARGIN: f32 = 1.;
+    let speed: f32 = common.enemy_speed;
+    const GOAL_MARGIN: f32 = 6.;
 
     let window = window.single();
     let (left, right, up, down) = (
@@ -398,7 +452,7 @@ fn update_enemies(
             // vel.0 += Vec2::ONE;
 
             let dir = enemy.goal - pos;
-            vel.0 += dir.normalize() * SPEED;
+            vel.0 += dir.normalize() * speed;
         }
     }
 }
@@ -686,31 +740,115 @@ fn insert_usb(
 }
 
 fn update_progress_and_spawn_popups(
-    mut q: Query<Option<(&mut ProgressBar, &mut Text)>>,
+    mut q: Query<Option<(Entity, &mut ProgressBar, &mut Text)>>,
     time: Res<Time>,
     mut writer: EventWriter<TextPopupEvent>,
+    mut common: ResMut<Common>,
+    mut cmd: Commands,
 ) {
-    for (mut p, mut text) in q.iter_mut().filter_map(|v| v) {
+    for (entity, mut p, mut text) in q.iter_mut().flatten() {
         if p.timer.tick(time.delta()).just_finished() {
-            p.progress += 1;
+            if 100 == p.progress {
+                common.score += 1;
+                // cmd.entity(entity).despawn_recursive();
+            } else {
+                p.progress += 1;
+            }
         }
 
-        if p.timer_popups.tick(time.delta()).just_finished() {
-            if rand::random() {
-                insert_random_popup(&mut writer);
-            }
+        if p.timer_popups.tick(time.delta()).just_finished() && rand::random() {
+            insert_random_popup(&mut writer);
         }
 
         text.sections.first_mut().unwrap().value = format!("download {}", p.progress);
     }
 }
 
-fn handle_popup_events(mut reader: EventReader<PopupCommand>) {
+fn add_enemy(
+    mut cmd: Commands,
+    mut r: EventReader<AddEnemy>,
+    q_window: Query<&Window>,
+    asset_pool: Res<AssetPool>,
+) {
+    let window = q_window.single();
+    let mut rng = rand::thread_rng();
+
+    for _ in r.iter() {
+        cmd.spawn((
+            Enemy {
+                goal: random_window_position(&window, &mut rng),
+                ..default()
+            },
+            TransformBundle {
+                local: Transform {
+                    translation: Vec3 {
+                        x: -window.width() / 2.0,
+                        y: -window.height() / 2.0,
+                        z: 0.,
+                    },
+                    ..default()
+                },
+                ..default()
+            },
+            Velocity::default(),
+            VisibilityBundle::default(),
+        ))
+        .with_children(|cmd| {
+            // cmd.spawn(MaterialMesh2dBundle {
+            //     mesh: meshes
+            //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+            //         .into(),
+            //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+            //     ..default()
+            // });
+            cmd.spawn(Svg2dBundle {
+                svg: asset_pool.police.clone(),
+                transform: Transform {
+                    scale: Vec3 {
+                        x: 1.5,
+                        y: 1.5,
+                        ..default()
+                    },
+                    translation: Vec3 {
+                        x: -25.,
+                        y: 25.,
+                        ..default()
+                    },
+                    ..default()
+                },
+                ..default()
+            });
+        });
+    }
+}
+
+fn handle_popup_events(
+    cmd: Commands,
+    mut reader: EventReader<PopupCommand>,
+    mut q_enemy: Query<&mut Enemy>,
+    mut q_player: Query<&Transform, With<Player>>,
+    mut w_enemy: EventWriter<AddEnemy>,
+    mut common: ResMut<Common>,
+) {
     for event in reader.iter() {
         match event {
-            PopupCommand::AddCop => info!("got add cop command"),
-            PopupCommand::CopsTargetPlayer => info!("got cops target player command"),
-            PopupCommand::IncreaseCopSpeed => info!("got increase cop speed command"),
+            PopupCommand::AddCop => {
+                w_enemy.send(AddEnemy);
+            }
+            PopupCommand::CopsTargetPlayer => {
+                let player_trans = q_player.single();
+                for mut enemy in q_enemy.iter_mut() {
+                    enemy.goal = player_trans.translation.truncate();
+                }
+            }
+            PopupCommand::IncreaseCopSpeed => {
+                common.enemy_speed += 1.;
+            }
         }
     }
+}
+
+fn update_score(common: Res<Common>, mut q: Query<&mut Text, With<Score>>) {
+    q.single_mut().sections.first_mut().unwrap().value =
+        format!("crime downloaded: {}", common.score);
 }
