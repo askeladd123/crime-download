@@ -1,3 +1,4 @@
+#![allow(unused, clippy::type_complexity)]
 use bevy::{
     log::LogPlugin, pbr::extract_camera_previous_view_projection, prelude::*,
     sprite::MaterialMesh2dBundle,
@@ -31,7 +32,7 @@ fn main() {
                     ..Default::default()
                 })
                 .set(LogPlugin {
-                    filter: "warn,stealy=trace,wgpu_hal::vulkan::instance=off".into(),
+                    filter: "warn,crime-download=trace,wgpu_hal::vulkan::instance=off".into(),
                     ..default()
                 }),
             TextPopupPlugin,
@@ -61,7 +62,6 @@ fn main() {
 }
 
 // Resources, Components and Events
-
 #[derive(Resource)]
 struct Common {
     enemy_speed: f32,
@@ -238,7 +238,6 @@ fn setup(
 ) {
     writer.send(AddComputerAndUsb);
     writer.send(AddComputerAndUsb);
-    // writer.send(AddComputerAndUsb);
 
     const STARTING_ENEMIES: u32 = 2;
 
@@ -247,79 +246,8 @@ fn setup(
 
     cmd.spawn(Camera2dBundle::default());
 
-    // cmd.spawn(Svg2dBundle {
-    //     svg: asset_server.load("computer-1.svg"),
-    //     transform: Transform {
-    //         scale: Vec3 {
-    //             x: 1.5,
-    //             y: 1.5,
-    //             ..default()
-    //         },
-    //         translation: Vec3 {
-    //             x: 0.,
-    //             y: 0.,
-    //             ..default()
-    //         },
-    //         ..default()
-    //     },
-    //     origin: Origin::Center,
-    //     ..default()
-    // });
-
-    // images stolen counter in top left
-    // cmd.spawn(Text2dBundle {
-    //     text: Text::from_section("translation", TextStyle::default()),
-    //     ..default()
-    // });
-
-    // let police_handle = asset_server.load("police.svg");
     for i in 0..STARTING_ENEMIES {
         w_enemy.send(AddEnemy);
-        // cmd.spawn((
-        //     Enemy {
-        //         goal: random_window_position(&window, &mut rng),
-        //         ..default()
-        //     },
-        //     TransformBundle {
-        //         local: Transform {
-        //             translation: Vec3 {
-        //                 x: -window.width() / 2.0,
-        //                 y: -window.height() / 2.0,
-        //                 z: i as f32,
-        //             },
-        //             ..default()
-        //         },
-        //         ..default()
-        //     },
-        //     Velocity::default(),
-        //     VisibilityBundle::default(),
-        // ))
-        // .with_children(|cmd| {
-        //     // cmd.spawn(MaterialMesh2dBundle {
-        //     //     mesh: meshes
-        //     //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
-        //     //         .into(),
-        //     //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
-        //     //     ..default()
-        //     // });
-        //     cmd.spawn(Svg2dBundle {
-        //         svg: police_handle.clone(),
-        //         transform: Transform {
-        //             scale: Vec3 {
-        //                 x: 1.5,
-        //                 y: 1.5,
-        //                 ..default()
-        //             },
-        //             translation: Vec3 {
-        //                 x: -25.,
-        //                 y: 25.,
-        //                 ..default()
-        //             },
-        //             ..default()
-        //         },
-        //         ..default()
-        //     });
-        // });
     }
     cmd.insert_resource(AssetPool {
         computer: asset_server.load("computer.png"),
@@ -376,27 +304,13 @@ fn setup(
         Visibility::Visible,
     ))
     .with_children(|cmd| {
-        // cmd.spawn(MaterialMesh2dBundle {
-        //     mesh: meshes
-        //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
-        //         .into(),
-        //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
-        //     ..default()
-        // });
         cmd.spawn(Svg2dBundle {
             svg: asset_server.load("thief.svg"),
             transform: Transform {
-                // translation: Vec3 {
-                //     x: -25.,
-                //     y: 25.,
-                //     z: 10.,
-                //     ..Default::default()
-                // },
                 translation: Vec3 {
                     x: -25.,
                     y: 25.,
                     z: 10.,
-                    ..Default::default()
                 },
                 scale: Vec3 {
                     x: 0.1,
@@ -406,7 +320,6 @@ fn setup(
                 ..default()
             },
             origin: Origin::Center,
-            // origin: Origin::TopLeft,
             ..default()
         });
     });
@@ -449,8 +362,6 @@ fn update_enemies(
         };
 
         if GOAL_MARGIN < (enemy.goal - pos).length() {
-            // vel.0 += Vec2::ONE;
-
             let dir = enemy.goal - pos;
             vel.0 += dir.normalize() * speed;
         }
@@ -582,7 +493,7 @@ fn add_computer_and_usb(
             SpriteBundle {
                 texture: asset_pool.computer.clone(),
                 transform: Transform {
-                    translation: random_window_position(&window, &mut rng).extend(0.),
+                    translation: random_window_position(window, &mut rng).extend(0.),
                     scale: Vec3 {
                         x: 0.2,
                         y: 0.2,
@@ -601,24 +512,6 @@ fn add_computer_and_usb(
                 material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
                 ..default()
             });
-            // cmd.spawn(Svg2dBundle {
-            //     svg: asset_pool.computer.clone(),
-            //     transform: Transform {
-            //         scale: Vec3 {
-            //             x: 0.5,
-            //             y: 0.5,
-            //             ..default()
-            //         },
-            //         translation: Vec3 {
-            //             // x: -25.,
-            //             // y: 25.,
-            //             ..default()
-            //         },
-            //         ..default()
-            //     },
-            //     origin: Origin::Center,
-            //     ..default()
-            // });
         });
 
         cmd.spawn((
@@ -626,7 +519,7 @@ fn add_computer_and_usb(
             SpriteBundle {
                 texture: asset_pool.usb.clone(),
                 transform: Transform {
-                    translation: random_window_position(&window, &mut rng).extend(0.),
+                    translation: random_window_position(window, &mut rng).extend(0.),
                     scale: Vec3 {
                         x: 0.15,
                         y: 0.15,
@@ -645,23 +538,6 @@ fn add_computer_and_usb(
                 material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
                 ..default()
             });
-            // cmd.spawn(Svg2dBundle {
-            //     svg: asset_pool.usb.clone(),
-            //     transform: Transform {
-            //         scale: Vec3 {
-            //             x: 1.5,
-            //             y: 1.5,
-            //             ..default()
-            //         },
-            //         translation: Vec3 {
-            //             x: -25.,
-            //             y: 25.,
-            //             ..default()
-            //         },
-            //         ..default()
-            //     },
-            //     ..default()
-            // });
         });
     }
 }
@@ -702,11 +578,7 @@ fn insert_usb(
     mut cmd: Commands,
 ) {
     for (usb_transform, usb_entity) in q_usb.iter() {
-        // info!("tick usb");
-        for (computer_transform, computer_entity) in q_computer.iter() {
-            // dbg!(computer_transform.translation, usb_transform.translation());
-            // info!("tick computer");
-
+        for (computer_transform, _computer_entity) in q_computer.iter() {
             if bevy::sprite::collide_aabb::collide(
                 usb_transform.translation(),
                 BBOX_SIZE,
@@ -750,7 +622,6 @@ fn update_progress_and_spawn_popups(
         if p.timer.tick(time.delta()).just_finished() {
             if 100 == p.progress {
                 common.score += 1;
-                // cmd.entity(entity).despawn_recursive();
             } else {
                 p.progress += 1;
             }
@@ -776,7 +647,7 @@ fn add_enemy(
     for _ in r.iter() {
         cmd.spawn((
             Enemy {
-                goal: random_window_position(&window, &mut rng),
+                goal: random_window_position(window, &mut rng),
                 ..default()
             },
             TransformBundle {
@@ -794,13 +665,6 @@ fn add_enemy(
             VisibilityBundle::default(),
         ))
         .with_children(|cmd| {
-            // cmd.spawn(MaterialMesh2dBundle {
-            //     mesh: meshes
-            //         .add(shape::Quad::new(Vec2::new(50., 50.)).into())
-            //         .into(),
-            //     material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
-            //     ..default()
-            // });
             cmd.spawn(Svg2dBundle {
                 svg: asset_pool.police.clone(),
                 transform: Transform {
@@ -823,7 +687,7 @@ fn add_enemy(
 }
 
 fn handle_popup_events(
-    cmd: Commands,
+    _cmd: Commands,
     mut reader: EventReader<PopupCommand>,
     mut q_enemy: Query<&mut Enemy>,
     mut q_player: Query<&Transform, With<Player>>,
