@@ -71,7 +71,7 @@ struct Common {
 impl Default for Common {
     fn default() -> Self {
         Self {
-            enemy_speed: 1.,
+            enemy_speed: 60.,
             score: 0,
         }
     }
@@ -457,13 +457,13 @@ fn update_enemies(
     }
 }
 
-fn apply_velocity(mut query: Query<(&mut Transform, &mut Velocity)>) {
+fn apply_velocity(mut query: Query<(&mut Transform, &mut Velocity)>, time: Res<Time>) {
     const MIN_VEL: f32 = 0.1;
     const DRAG_C: f32 = 0.5;
 
     for (mut trans, mut vel) in query.iter_mut() {
-        trans.translation.x += vel.0.x;
-        trans.translation.y += vel.0.y;
+        trans.translation.x += vel.0.x * time.delta_seconds();
+        trans.translation.y += vel.0.y * time.delta_seconds();
         vel.0 = if MIN_VEL < vel.0.length() {
             vel.0 * DRAG_C
         } else {
@@ -473,7 +473,7 @@ fn apply_velocity(mut query: Query<(&mut Transform, &mut Velocity)>) {
 }
 
 fn pull_inside_bounds(mut query: Query<(&Transform, &mut Velocity)>, query_window: Query<&Window>) {
-    const PULL_VEL: f32 = 6.;
+    const PULL_VEL: f32 = 360.;
     let window = query_window.single();
 
     let (left, right, up, down) = (
@@ -511,7 +511,7 @@ fn keyboard_input(
     mut query: Query<(&mut Velocity, &mut Player)>,
     time: Res<Time>,
 ) {
-    const SPEED: f32 = 4.;
+    const SPEED: f32 = 240.;
     const DASH_C: f32 = 4.;
 
     let (mut vel, mut player) = query.single_mut();
