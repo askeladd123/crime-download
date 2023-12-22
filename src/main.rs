@@ -1,6 +1,6 @@
 #![allow(unused, clippy::type_complexity)]
 use bevy::{
-    log::LogPlugin, pbr::extract_camera_previous_view_projection, prelude::*,
+    input::keyboard, log::LogPlugin, pbr::extract_camera_previous_view_projection, prelude::*,
     sprite::MaterialMesh2dBundle,
 };
 use bevy_svg::prelude::*;
@@ -13,13 +13,16 @@ mod popups;
 use popups::*;
 const PI: f32 = std::f32::consts::PI;
 const BBOX_SIZE: Vec2 = Vec2 { x: 50., y: 50. };
+const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
+const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
+const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Msaa::Sample4)
         .add_state::<State>()
-        .add_event::<AddComputerAndUsb>()
+        .add_event::<Items>()
         .add_event::<PopupCommand>()
         .add_event::<AddEnemy>()
         .add_plugins((
@@ -39,6 +42,7 @@ fn main() {
         ))
         .add_plugins(bevy_svg::prelude::SvgPlugin)
         .add_systems(Startup, setup)
+        .add_systems(OnEnter(State::InGame), spawn)
         .add_systems(
             Update,
             (
@@ -47,7 +51,7 @@ fn main() {
                 apply_velocity,
                 pull_inside_bounds,
                 check_game_over,
-                add_computer_and_usb,
+                handle_item_events,
                 add_enemy,
                 pick_up_usb,
                 insert_usb,
@@ -57,7 +61,16 @@ fn main() {
             )
                 .run_if(in_state(State::InGame)),
         )
-        .add_systems(OnEnter(State::GameOver), game_over)
+        .add_systems(OnEnter(State::GameOver), game_over_spawn)
+        .add_systems(Update, (check_restart).run_if(in_state(State::GameOver)))
+        .add_systems(OnExit(State::GameOver), game_over_despawn)
+        .add_systems(
+            OnTransition {
+                from: State::GameOver,
+                to: State::InGame,
+            },
+            despawn,
+        )
         .run();
 }
 
@@ -76,6 +89,9 @@ impl Default for Common {
         }
     }
 }
+
+#[derive(Component)]
+struct GameOver;
 
 #[derive(Component)]
 struct ProgressBar {
@@ -119,15 +135,18 @@ impl Default for ProgressBarBundle {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 struct AssetPool {
     computer: Handle<Image>,
     usb: Handle<Image>,
     police: Handle<Svg>,
+    thief: Handle<Svg>,
 }
 
 #[derive(Event)]
-struct AddComputerAndUsb;
+enum Items {
+    AddComputerAndUsb,
+}
 
 #[derive(Event)]
 struct AddEnemy;
@@ -183,26 +202,6 @@ impl Default for Enemy {
 #[derive(Component, Default, Copy, Clone, Debug)]
 struct Velocity(Vec2);
 
-fn game_over(mut cmd: Commands) {
-    cmd.spawn(Text2dBundle {
-        text: Text::from_section(
-            "game over",
-            TextStyle {
-                font_size: 100.,
-                ..default()
-            },
-        ),
-        transform: Transform {
-            translation: Vec3 {
-                z: 100.,
-                ..default()
-            },
-            ..default()
-        },
-        ..default()
-    });
-}
-
 fn check_game_over(
     mut next_state: ResMut<NextState<State>>,
     query_player: Query<&Transform, With<Player>>,
@@ -233,29 +232,18 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     query_window: Query<&Window>,
-    mut writer: EventWriter<AddComputerAndUsb>,
-    mut w_enemy: EventWriter<AddEnemy>,
 ) {
-    writer.send(AddComputerAndUsb);
-    writer.send(AddComputerAndUsb);
-
-    const STARTING_ENEMIES: u32 = 2;
-
-    let mut rng = rand::thread_rng();
     let window = query_window.single();
 
     cmd.spawn(Camera2dBundle::default());
 
-    for i in 0..STARTING_ENEMIES {
-        w_enemy.send(AddEnemy);
-    }
-    cmd.insert_resource(AssetPool {
+    let asset_pool = AssetPool {
         computer: asset_server.load("computer.png"),
         usb: asset_server.load("usb.png"),
         police: asset_server.load("police.svg"),
-    });
-
-    cmd.insert_resource(Common::default());
+        thief: asset_server.load("thief.svg"),
+    };
+    cmd.insert_resource(asset_pool.clone());
 
     cmd.spawn(SpriteBundle {
         texture: asset_server.load("floor.jpg"),
@@ -295,6 +283,34 @@ fn setup(
             ..default()
         },
     ));
+}
+
+fn despawn(
+    mut cmd: Commands,
+    q: Query<Entity, Or<(With<Computer>, With<Usb>, With<Player>, With<Enemy>)>>,
+) {
+    cmd.remove_resource::<Common>();
+
+    for entity in q.iter() {
+        cmd.entity(entity).despawn_recursive();
+    }
+}
+
+fn spawn(
+    mut cmd: Commands,
+    mut w_items: EventWriter<Items>,
+    mut w_enemy: EventWriter<AddEnemy>,
+    asset_pool: Res<AssetPool>,
+) {
+    cmd.insert_resource(Common::default());
+
+    w_items.send(Items::AddComputerAndUsb);
+    w_items.send(Items::AddComputerAndUsb);
+
+    const STARTING_ENEMIES: u32 = 2;
+    for i in 0..STARTING_ENEMIES {
+        w_enemy.send(AddEnemy);
+    }
 
     cmd.spawn((
         Player::default(),
@@ -305,7 +321,7 @@ fn setup(
     ))
     .with_children(|cmd| {
         cmd.spawn(Svg2dBundle {
-            svg: asset_server.load("thief.svg"),
+            svg: asset_pool.thief.clone(),
             transform: Transform {
                 translation: Vec3 {
                     x: -25.,
@@ -477,68 +493,72 @@ fn random_window_position(window: &Window, rng: &mut rand::rngs::ThreadRng) -> V
     }
 }
 
-fn add_computer_and_usb(
+fn handle_item_events(
     mut cmd: Commands,
-    mut reader: EventReader<AddComputerAndUsb>,
+    mut reader: EventReader<Items>,
     query_window: Query<&Window>,
     asset_pool: Res<AssetPool>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for _ in reader.iter() {
-        let mut rng = rand::thread_rng();
-        let window = query_window.single();
-        cmd.spawn((
-            Computer,
-            SpriteBundle {
-                texture: asset_pool.computer.clone(),
-                transform: Transform {
-                    translation: random_window_position(window, &mut rng).extend(0.),
-                    scale: Vec3 {
-                        x: 0.2,
-                        y: 0.2,
+    for event in reader.iter() {
+        match event {
+            Items::AddComputerAndUsb => {
+                let mut rng = rand::thread_rng();
+                let window = query_window.single();
+                cmd.spawn((
+                    Computer,
+                    SpriteBundle {
+                        texture: asset_pool.computer.clone(),
+                        transform: Transform {
+                            translation: random_window_position(window, &mut rng).extend(0.),
+                            scale: Vec3 {
+                                x: 0.2,
+                                y: 0.2,
+                                ..default()
+                            },
+                            ..default()
+                        },
                         ..default()
                     },
-                    ..default()
-                },
-                ..default()
-            },
-        ))
-        .with_children(|cmd| {
-            cmd.spawn(MaterialMesh2dBundle {
-                mesh: meshes
-                    .add(shape::Quad::new(Vec2::new(50., 50.)).into())
-                    .into(),
-                material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
-                ..default()
-            });
-        });
+                ))
+                .with_children(|cmd| {
+                    cmd.spawn(MaterialMesh2dBundle {
+                        mesh: meshes
+                            .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+                            .into(),
+                        material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+                        ..default()
+                    });
+                });
 
-        cmd.spawn((
-            Usb,
-            SpriteBundle {
-                texture: asset_pool.usb.clone(),
-                transform: Transform {
-                    translation: random_window_position(window, &mut rng).extend(0.),
-                    scale: Vec3 {
-                        x: 0.15,
-                        y: 0.15,
+                cmd.spawn((
+                    Usb,
+                    SpriteBundle {
+                        texture: asset_pool.usb.clone(),
+                        transform: Transform {
+                            translation: random_window_position(window, &mut rng).extend(0.),
+                            scale: Vec3 {
+                                x: 0.15,
+                                y: 0.15,
+                                ..default()
+                            },
+                            ..default()
+                        },
                         ..default()
                     },
-                    ..default()
-                },
-                ..default()
-            },
-        ))
-        .with_children(|cmd| {
-            cmd.spawn(MaterialMesh2dBundle {
-                mesh: meshes
-                    .add(shape::Quad::new(Vec2::new(50., 50.)).into())
-                    .into(),
-                material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
-                ..default()
-            });
-        });
+                ))
+                .with_children(|cmd| {
+                    cmd.spawn(MaterialMesh2dBundle {
+                        mesh: meshes
+                            .add(shape::Quad::new(Vec2::new(50., 50.)).into())
+                            .into(),
+                        material: materials.add(ColorMaterial::from(Color::LIME_GREEN)),
+                        ..default()
+                    });
+                });
+            }
+        }
     }
 }
 
@@ -715,4 +735,112 @@ fn handle_popup_events(
 fn update_score(common: Res<Common>, mut q: Query<&mut Text, With<Score>>) {
     q.single_mut().sections.first_mut().unwrap().value =
         format!("crime downloaded: {}", common.score);
+}
+
+fn game_over_despawn(mut cmd: Commands, mut q: Query<Entity, With<GameOver>>) {
+    for entity in q.iter() {
+        cmd.entity(entity).despawn_recursive();
+    }
+}
+
+fn game_over_spawn(mut cmd: Commands) {
+    cmd.spawn(GameOver).insert(Text2dBundle {
+        text: Text::from_section(
+            "game over",
+            TextStyle {
+                font_size: 100.,
+                ..default()
+            },
+        ),
+        transform: Transform {
+            translation: Vec3 {
+                z: 100.,
+                ..default()
+            },
+            ..default()
+        },
+        ..default()
+    });
+
+    cmd.spawn(GameOver)
+        .insert(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(133.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|parent| {
+            parent
+                .spawn(ButtonBundle {
+                    style: Style {
+                        width: Val::Px(150.0),
+                        height: Val::Px(65.0),
+                        border: UiRect::all(Val::Px(5.0)),
+                        // horizontally center child text
+                        justify_content: JustifyContent::Center,
+                        // vertically center child text
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    border_color: BorderColor(Color::BLACK),
+                    background_color: NORMAL_BUTTON.into(),
+                    ..default()
+                })
+                .with_children(|parent| {
+                    parent.spawn(TextBundle::from_section(
+                        "restart",
+                        TextStyle {
+                            font_size: 40.0,
+                            color: Color::rgb(0.9, 0.9, 0.9),
+                            ..Default::default()
+                        },
+                    ));
+                });
+        });
+}
+
+fn check_restart(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut interaction_query: Query<
+        (
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+            &Children,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut text_query: Query<&mut Text>,
+    mut next_state: ResMut<NextState<State>>,
+) {
+    if keyboard_input.pressed(KeyCode::Space)
+        || keyboard_input.pressed(KeyCode::Return)
+        || keyboard_input.pressed(KeyCode::R)
+    {
+        next_state.set(State::InGame);
+        return;
+    }
+
+    for (interaction, mut color, mut border_color, children) in &mut interaction_query {
+        let mut text = text_query.get_mut(children[0]).unwrap();
+        match *interaction {
+            Interaction::Pressed => {
+                *color = PRESSED_BUTTON.into();
+                border_color.0 = Color::RED;
+                next_state.set(State::InGame);
+            }
+            Interaction::Hovered => {
+                *color = HOVERED_BUTTON.into();
+                border_color.0 = Color::WHITE;
+            }
+            Interaction::None => {
+                *color = NORMAL_BUTTON.into();
+                border_color.0 = Color::BLACK;
+            }
+        }
+    }
 }
