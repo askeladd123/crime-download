@@ -163,6 +163,7 @@ enum State {
 struct Player {
     dash_cooldown: Timer,
     dash_duration: Timer,
+    has_usb: bool,
 }
 
 impl Default for Player {
@@ -170,6 +171,7 @@ impl Default for Player {
         Self {
             dash_cooldown: Timer::from_seconds(0.8, TimerMode::Once),
             dash_duration: Timer::from_seconds(0.1, TimerMode::Once),
+            has_usb: false,
         }
     }
 }
@@ -547,27 +549,33 @@ fn handle_item_events(
 
 fn pick_up_usb(
     mut q_usb: Query<(&mut Transform, Entity), (With<Usb>, Without<Player>)>,
-    q_player: Query<(&Transform, Entity), (With<Player>, Without<Usb>)>,
+    q_player: Query<(Entity, &Transform, &Children), With<Player>>,
     mut cmd: Commands,
 ) {
     let (
+        player_entity,
         Transform {
             translation: player_trans,
             ..
         },
-        player,
+        player_children,
     ) = q_player.single();
 
+    let mut has_usb = player_children
+        .iter()
+        .any(|entity| q_usb.get(*entity).is_ok());
+
     for (mut usb_transform, usb) in q_usb.iter_mut() {
-        if bevy::sprite::collide_aabb::collide(
-            *player_trans,
-            BBOX_SIZE,
-            usb_transform.translation,
-            BBOX_SIZE,
-        )
-        .is_some()
+        if !has_usb
+            && bevy::sprite::collide_aabb::collide(
+                *player_trans,
+                BBOX_SIZE,
+                usb_transform.translation,
+                BBOX_SIZE,
+            )
+            .is_some()
         {
-            let mut player = cmd.get_entity(player).unwrap();
+            let mut player = cmd.get_entity(player_entity).unwrap();
             usb_transform.translation.x = 30.;
             usb_transform.translation.y = 30.;
             player.push_children(&[usb]);
