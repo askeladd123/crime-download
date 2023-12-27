@@ -3,10 +3,10 @@ use bevy::{log::LogPlugin, prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_svg::prelude::*;
 use bevy_text_popup::{TextPopupEvent, TextPopupPlugin};
 use rand::Rng;
+use std::f32::consts::PI;
 
 mod popups;
 use popups::*;
-const PI: f32 = std::f32::consts::PI;
 const BBOX_SIZE: Vec2 = Vec2 { x: 50., y: 50. };
 const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
@@ -274,7 +274,16 @@ fn setup(mut cmd: Commands, asset_server: Res<AssetServer>) {
 
 fn despawn(
     mut cmd: Commands,
-    q: Query<Entity, Or<(With<Pc>, With<Usb>, With<Player>, With<Enemy>)>>,
+    q: Query<
+        Entity,
+        Or<(
+            With<Pc>,
+            With<Usb>,
+            With<Player>,
+            With<Enemy>,
+            With<ProgressBar>,
+        )>,
+    >,
 ) {
     cmd.remove_resource::<Common>();
 
@@ -702,7 +711,6 @@ fn add_enemy(
 }
 
 fn handle_popup_events(
-    _cmd: Commands,
     q_player: Query<&Transform, With<Player>>,
     mut q_enemy: Query<&mut Enemy>,
     mut w_enemy: EventWriter<AddEnemy>,
