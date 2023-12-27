@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_text_popup::{
-    TextPopupButton, TextPopupEvent, TextPopupLocation, TextPopupPlugin, TextPopupTimeout,
+    TextPopupButton, TextPopupEvent, TextPopupLocation,
 };
 use rand::seq::IteratorRandom;
 

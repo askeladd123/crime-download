@@ -1,12 +1,7 @@
 #![allow(unused, clippy::type_complexity)]
-use bevy::{
-    input::keyboard, log::LogPlugin, pbr::extract_camera_previous_view_projection, prelude::*,
-    sprite::MaterialMesh2dBundle,
-};
+use bevy::{log::LogPlugin, prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_svg::prelude::*;
-use bevy_text_popup::{
-    TextPopupButton, TextPopupEvent, TextPopupLocation, TextPopupPlugin, TextPopupTimeout,
-};
+use bevy_text_popup::{TextPopupEvent, TextPopupPlugin};
 use rand::Rng;
 
 mod popups;
@@ -137,7 +132,7 @@ impl Default for ProgressBarBundle {
 
 #[derive(Resource, Clone)]
 struct AssetPool {
-    computer: Handle<Image>,
+    pc: Handle<Image>,
     usb: Handle<Image>,
     police: Handle<Svg>,
     thief: Handle<Svg>,
@@ -145,14 +140,14 @@ struct AssetPool {
 
 #[derive(Event)]
 enum Items {
-    AddComputerAndUsb,
+    AddPcUsb,
 }
 
 #[derive(Event)]
 struct AddEnemy;
 
 #[derive(Component)]
-struct Computer;
+struct Pc;
 
 #[derive(Component)]
 struct Usb;
@@ -181,9 +176,7 @@ impl Default for Player {
 
 #[derive(Component)]
 struct Enemy {
-    // change to change_goal
     change_goal: Timer,
-    angle: f32,
     goal: Vec2,
 }
 
@@ -192,8 +185,6 @@ impl Default for Enemy {
         let mut rng = rand::thread_rng();
         Self {
             change_goal: Timer::from_seconds(rng.gen_range(1.0..10.0), TimerMode::Repeating),
-
-            angle: Default::default(),
             goal: Default::default(),
         }
     }
@@ -226,19 +217,11 @@ fn check_game_over(
 #[derive(Component)]
 struct Score;
 
-fn setup(
-    mut cmd: Commands,
-    asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    query_window: Query<&Window>,
-) {
-    let window = query_window.single();
-
+fn setup(mut cmd: Commands, asset_server: Res<AssetServer>) {
     cmd.spawn(Camera2dBundle::default());
 
     let asset_pool = AssetPool {
-        computer: asset_server.load("computer.png"),
+        pc: asset_server.load("computer.png"),
         usb: asset_server.load("usb.png"),
         police: asset_server.load("police.svg"),
         thief: asset_server.load("thief.svg"),
@@ -287,7 +270,7 @@ fn setup(
 
 fn despawn(
     mut cmd: Commands,
-    q: Query<Entity, Or<(With<Computer>, With<Usb>, With<Player>, With<Enemy>)>>,
+    q: Query<Entity, Or<(With<Pc>, With<Usb>, With<Player>, With<Enemy>)>>,
 ) {
     cmd.remove_resource::<Common>();
 
@@ -304,11 +287,11 @@ fn spawn(
 ) {
     cmd.insert_resource(Common::default());
 
-    w_items.send(Items::AddComputerAndUsb);
-    w_items.send(Items::AddComputerAndUsb);
+    w_items.send(Items::AddPcUsb);
+    w_items.send(Items::AddPcUsb);
 
     const STARTING_ENEMIES: u32 = 2;
-    for i in 0..STARTING_ENEMIES {
+    for _ in 0..STARTING_ENEMIES {
         w_enemy.send(AddEnemy);
     }
 
@@ -503,13 +486,13 @@ fn handle_item_events(
 ) {
     for event in reader.iter() {
         match event {
-            Items::AddComputerAndUsb => {
+            Items::AddPcUsb => {
                 let mut rng = rand::thread_rng();
                 let window = query_window.single();
                 cmd.spawn((
-                    Computer,
+                    Pc,
                     SpriteBundle {
-                        texture: asset_pool.computer.clone(),
+                        texture: asset_pool.pc.clone(),
                         transform: Transform {
                             translation: random_window_position(window, &mut rng).extend(0.),
                             scale: Vec3 {
@@ -593,16 +576,16 @@ fn pick_up_usb(
 }
 
 fn insert_usb(
-    q_usb: Query<(&GlobalTransform, Entity), (With<Usb>, Without<Computer>)>,
-    q_computer: Query<(&Transform, Entity), (With<Computer>, Without<Usb>)>,
+    q_usb: Query<(&GlobalTransform, Entity), (With<Usb>, Without<Pc>)>,
+    q_pc: Query<(&Transform, Entity), (With<Pc>, Without<Usb>)>,
     mut cmd: Commands,
 ) {
     for (usb_transform, usb_entity) in q_usb.iter() {
-        for (computer_transform, _computer_entity) in q_computer.iter() {
+        for (pc_transform, _pc_entity) in q_pc.iter() {
             if bevy::sprite::collide_aabb::collide(
                 usb_transform.translation(),
                 BBOX_SIZE,
-                computer_transform.translation,
+                pc_transform.translation,
                 BBOX_SIZE,
             )
             .is_some()
@@ -619,7 +602,7 @@ fn insert_usb(
                             },
                         ),
                         transform: Transform::from_translation(
-                            computer_transform.translation + Vec3::new(0., 50., 10.),
+                            pc_transform.translation + Vec3::new(0., 50., 10.),
                         ),
                         ..default()
                     },
@@ -636,9 +619,8 @@ fn update_progress_and_spawn_popups(
     time: Res<Time>,
     mut writer: EventWriter<TextPopupEvent>,
     mut common: ResMut<Common>,
-    mut cmd: Commands,
 ) {
-    for (entity, mut p, mut text) in q.iter_mut().flatten() {
+    for (_entity, mut p, mut text) in q.iter_mut().flatten() {
         if p.timer.tick(time.delta()).just_finished() {
             if 100 == p.progress {
                 common.score += 1;
@@ -708,11 +690,11 @@ fn add_enemy(
 
 fn handle_popup_events(
     _cmd: Commands,
-    mut reader: EventReader<PopupCommand>,
+    q_player: Query<&Transform, With<Player>>,
     mut q_enemy: Query<&mut Enemy>,
-    mut q_player: Query<&Transform, With<Player>>,
     mut w_enemy: EventWriter<AddEnemy>,
     mut common: ResMut<Common>,
+    mut reader: EventReader<PopupCommand>,
 ) {
     for event in reader.iter() {
         match event {
@@ -737,7 +719,7 @@ fn update_score(common: Res<Common>, mut q: Query<&mut Text, With<Score>>) {
         format!("crime downloaded: {}", common.score);
 }
 
-fn game_over_despawn(mut cmd: Commands, mut q: Query<Entity, With<GameOver>>) {
+fn game_over_despawn(mut cmd: Commands, q: Query<Entity, With<GameOver>>) {
     for entity in q.iter() {
         cmd.entity(entity).despawn_recursive();
     }
@@ -806,15 +788,9 @@ fn game_over_spawn(mut cmd: Commands) {
 fn check_restart(
     keyboard_input: Res<Input<KeyCode>>,
     mut interaction_query: Query<
-        (
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-            &Children,
-        ),
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
         (Changed<Interaction>, With<Button>),
     >,
-    mut text_query: Query<&mut Text>,
     mut next_state: ResMut<NextState<State>>,
 ) {
     if keyboard_input.pressed(KeyCode::Space)
@@ -825,8 +801,7 @@ fn check_restart(
         return;
     }
 
-    for (interaction, mut color, mut border_color, children) in &mut interaction_query {
-        let mut text = text_query.get_mut(children[0]).unwrap();
+    for (interaction, mut color, mut border_color) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
                 *color = PRESSED_BUTTON.into();
