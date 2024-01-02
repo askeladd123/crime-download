@@ -8,6 +8,9 @@ use std::f32::consts::PI;
 mod popups;
 use popups::*;
 const BBOX_SIZE: Vec2 = Vec2 { x: 50., y: 50. };
+
+const ENEMY_SPEED_INCREASE: f32 = 6.0;
+
 const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
@@ -26,7 +29,7 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "game jam 2".to_string(),
+                        title: "crime download".to_string(),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -766,7 +769,7 @@ fn handle_popup_events(
                 }
             }
             PopupCommand::IncreaseCopSpeed => {
-                common.enemy_speed += 1.;
+                common.enemy_speed += ENEMY_SPEED_INCREASE;
             }
         }
     }
