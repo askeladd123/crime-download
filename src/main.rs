@@ -2,7 +2,7 @@
 use bevy::{log::LogPlugin, prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_svg::prelude::*;
 use bevy_text_popup::{TextPopupEvent, TextPopupPlugin};
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use std::f32::consts::PI;
 
 mod popups;
@@ -11,6 +11,8 @@ const BBOX_SIZE: Vec2 = Vec2 { x: 50., y: 50. };
 const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
+const EXTRA_PC_CHANCE: f32 = 0.25;
+const POPUP_CHANCE_PER_SEC: f32 = 0.1;
 
 fn main() {
     App::new()
@@ -99,7 +101,7 @@ impl Default for ProgressBar {
     fn default() -> Self {
         Self {
             timer: Timer::from_seconds(0.25, TimerMode::Repeating),
-            timer_popups: Timer::from_seconds(3., TimerMode::Repeating),
+            timer_popups: Timer::from_seconds(1., TimerMode::Repeating),
             progress: 0,
         }
     }
@@ -141,6 +143,7 @@ struct AssetPool {
 #[derive(Event)]
 enum Items {
     AddPcUsb,
+    ClearAll,
 }
 
 #[derive(Event)]
@@ -491,6 +494,7 @@ fn random_window_position(window: &Window, rng: &mut rand::rngs::ThreadRng) -> V
 
 fn handle_item_events(
     mut cmd: Commands,
+    mut q_items: Query<Entity, Or<(With<Pc>, With<Usb>)>>,
     mut reader: EventReader<Items>,
     query_window: Query<&Window>,
     asset_pool: Res<AssetPool>,
@@ -554,6 +558,11 @@ fn handle_item_events(
                     });
                 });
             }
+            Items::ClearAll => {
+                for entity in q_items.iter() {
+                    cmd.entity(entity).despawn_recursive();
+                }
+            }
         }
     }
 }
@@ -614,22 +623,37 @@ fn insert_usb(
 
                 cmd.entity(usb_entity).despawn_recursive();
 
-                cmd.spawn(ProgressBarBundle {
-                    text: Text2dBundle {
-                        text: Text::from_section(
-                            "downloading...",
-                            TextStyle {
-                                font_size: 30.,
+                let progress_bar = cmd
+                    .spawn(ProgressBarBundle {
+                        text: Text2dBundle {
+                            text: Text::from_section(
+                                "downloading...",
+                                TextStyle {
+                                    font_size: 30.,
+                                    ..default()
+                                },
+                            ),
+                            transform: Transform {
+                                translation: Vec3 {
+                                    x: 0.,
+                                    y: 250.,
+                                    z: 10.,
+                                },
+                                scale: Vec3 {
+                                    x: 4.,
+                                    y: 4.,
+                                    ..default()
+                                },
                                 ..default()
                             },
-                        ),
-                        transform: Transform::from_translation(
-                            pc_transform.translation + Vec3::new(0., 50., 10.),
-                        ),
+                            ..default()
+                        },
                         ..default()
-                    },
-                    ..default()
-                });
+                    })
+                    .id();
+
+                cmd.entity(pc_entity).push_children(&[progress_bar]);
+
                 return;
             }
         }
@@ -637,21 +661,34 @@ fn insert_usb(
 }
 
 fn update_progress_and_spawn_popups(
-    mut q: Query<Option<(Entity, &mut ProgressBar, &mut Text)>>,
+    mut cmd: Commands,
+    mut q: Query<Option<(Entity, &mut ProgressBar, &mut Text, &Parent)>>,
     time: Res<Time>,
+    mut q_pc: Query<Entity, With<Pc>>,
     mut writer: EventWriter<TextPopupEvent>,
+    mut w_items: EventWriter<Items>,
     mut common: ResMut<Common>,
 ) {
-    for (_entity, mut p, mut text) in q.iter_mut().flatten() {
+    let mut rng = thread_rng();
+    for (progress_bar_entity, mut p, mut text, parent) in q.iter_mut().flatten() {
         if p.timer.tick(time.delta()).just_finished() {
             if 100 == p.progress {
                 common.score += 1;
+                let pc_entity = q_pc.get(parent.get()).unwrap();
+                cmd.entity(pc_entity).despawn_recursive();
+
+                w_items.send(Items::AddPcUsb);
+                if rng.gen::<f32>() < EXTRA_PC_CHANCE {
+                    w_items.send(Items::AddPcUsb);
+                }
             } else {
                 p.progress += 1;
             }
         }
 
-        if p.timer_popups.tick(time.delta()).just_finished() && rand::random() {
+        if p.timer_popups.tick(time.delta()).just_finished()
+            && rng.gen::<f32>() < POPUP_CHANCE_PER_SEC
+        {
             insert_random_popup(&mut writer);
         }
 
