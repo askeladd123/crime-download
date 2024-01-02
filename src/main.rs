@@ -146,8 +146,10 @@ enum Items {
 #[derive(Event)]
 struct AddEnemy;
 
-#[derive(Component)]
-struct Pc;
+#[derive(Component, Default)]
+struct Pc {
+    has_usb: bool,
+}
 
 #[derive(Component)]
 struct Usb;
@@ -492,7 +494,7 @@ fn handle_item_events(
                 let mut rng = rand::thread_rng();
                 let window = query_window.single();
                 cmd.spawn((
-                    Pc,
+                    Pc::default(),
                     SpriteBundle {
                         texture: asset_pool.pc.clone(),
                         transform: Transform {
@@ -584,20 +586,23 @@ fn pick_up_usb(
 }
 
 fn insert_usb(
-    q_usb: Query<(&GlobalTransform, Entity), (With<Usb>, Without<Pc>)>,
-    q_pc: Query<(&Transform, Entity), (With<Pc>, Without<Usb>)>,
+    q_usb: Query<(&GlobalTransform, Entity), With<Usb>>,
+    mut q_pc: Query<(&Transform, &mut Pc, Entity)>,
     mut cmd: Commands,
 ) {
     for (usb_transform, usb_entity) in q_usb.iter() {
-        for (pc_transform, _pc_entity) in q_pc.iter() {
-            if bevy::sprite::collide_aabb::collide(
-                usb_transform.translation(),
-                BBOX_SIZE,
-                pc_transform.translation,
-                BBOX_SIZE,
-            )
-            .is_some()
+        for (pc_transform, mut pc, pc_entity) in q_pc.iter_mut() {
+            if !pc.has_usb
+                && bevy::sprite::collide_aabb::collide(
+                    usb_transform.translation(),
+                    BBOX_SIZE,
+                    pc_transform.translation,
+                    BBOX_SIZE,
+                )
+                .is_some()
             {
+                pc.has_usb = true;
+
                 cmd.entity(usb_entity).despawn_recursive();
 
                 cmd.spawn(ProgressBarBundle {
